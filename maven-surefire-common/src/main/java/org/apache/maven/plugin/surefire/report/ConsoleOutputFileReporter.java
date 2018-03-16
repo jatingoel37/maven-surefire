@@ -86,6 +86,10 @@ public class ConsoleOutputFileReporter
                 {
                     fileOutputStream.close();
                 }
+                catch ( NullPointerException e )
+                {
+                    e.printStackTrace( System.out );
+                }
                 catch ( IOException ignored )
                 {
                 }

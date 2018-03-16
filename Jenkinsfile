@@ -26,13 +26,12 @@ properties(
     ]
 )
 
-final def oses = ['linux', 'windows']
-final def mavens = ['3.2.x', '3.3.x', '3.5.x'] // env.BRANCH_NAME == 'master' ? ['3.2.x', '3.3.x', '3.5.x'] : ['3.2.x', '3.5.x']
-final def jdks = [7, 8, 9, 10] // env.BRANCH_NAME == 'master' ? [7, 8, 9, 10] : [7, 10]
+final def oses = ['windows']
+final def mavens = env.BRANCH_NAME == 'master' ? ['3.2.x', '3.3.x', '3.5.x'] : ['3.5.x']
+final def jdks = env.BRANCH_NAME == 'master' ? [7, 8, 9, 10] : [8]
 
 final def options = ['-e', '-V', '-B', '-nsu', '-P', 'run-its']
 final def goals = ['clean', 'install', 'jacoco:report']
-final Map stages = [:]
 
 oses.eachWithIndex { os, indexOfOs ->
     mavens.eachWithIndex { maven, indexOfMaven ->
@@ -57,50 +56,19 @@ oses.eachWithIndex { os, indexOfOs ->
 
             println "${stageKey}  ==>  Label: ${label}, JDK: ${jdkTestName}, Maven: ${mvnName}."
 
-            stages[stageKey] = {
-                node(label) {
-                    timestamps {
-                        //https://github.com/jacoco/jacoco/issues/629
-                        def boolean makeReports = os == 'linux' && indexOfMaven == mavens.size() - 1 && jdk == 9
-                        def failsafeItPort = 8000 + 100 * indexOfMaven + 10 * indexOfJdk
-                        def allOptions = options + ["-Dfailsafe-integration-test-port=${failsafeItPort}", "-Dfailsafe-integration-test-stop-port=${1 + failsafeItPort}"]
+            node(label == 'ubuntu' ? 'ubuntu' : 'windows-2016-1') {
+                timestamps {
+                    //https://github.com/jacoco/jacoco/issues/629
+                    def boolean makeReports = os == 'linux' && indexOfMaven == mavens.size() - 1 && jdk == 9
+                    def failsafeItPort = 8000 + 100 * indexOfMaven + 10 * indexOfJdk
+                    def allOptions = options + ["-Dfailsafe-integration-test-port=${failsafeItPort}", "-Dfailsafe-integration-test-stop-port=${1 + failsafeItPort}"]
+                    try {
                         buildProcess(stageKey, jdkName, jdkTestName, mvnName, goals, allOptions, mavenOpts, makeReports)
+                    } catch (e) {
+                        println e
                     }
                 }
             }
-        }
-    }
-}
-
-timeout(time: 10, unit: 'HOURS') {
-    try {
-        parallel(stages)
-        // JENKINS-34376 seems to make it hard to detect the aborted builds
-    } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
-        // this ambiguous condition means a user probably aborted
-        if (e.causes.size() == 0) {
-            currentBuild.result = "ABORTED"
-        } else {
-            currentBuild.result = "FAILURE"
-        }
-        throw e
-    } catch (hudson.AbortException e) {
-        // this ambiguous condition means during a shell step, user probably aborted
-        if (e.getMessage().contains('script returned exit code 143')) {
-            currentBuild.result = "ABORTED"
-        } else {
-            currentBuild.result = "FAILURE"
-        }
-        throw e
-    } catch (InterruptedException e) {
-        currentBuild.result = "ABORTED"
-        throw e
-    } catch (Throwable e) {
-        currentBuild.result = "FAILURE"
-        throw e
-    } finally {
-        stage("notifications") {
-            //jenkinsNotify()
         }
     }
 }
